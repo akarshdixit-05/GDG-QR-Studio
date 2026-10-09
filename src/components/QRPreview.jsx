@@ -1,228 +1,179 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
-function QRPreview({
-  qrType,
-  formData,
-  settings,
-  onSave,
-}) {
+function QRPreview({ qrType, formData, settings, onSave }) {
   const canvasRef = useRef(null);
 
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
 
-  const getQRData = () => {
-    switch (qrType) {
-      case "url":
-        return formData.url.trim();
+  useEffect(() => {
+    let cancelled = false;
+    const canvas = canvasRef.current;
 
-      case "text":
-        return formData.text.trim();
+    if (!canvas) return;
 
-      case "email":
-        return `mailto:${formData.email}?subject=${encodeURIComponent(
-          formData.subject
-        )}&body=${encodeURIComponent(formData.message)}`;
-
-      case "phone":
-        return `tel:${formData.phone.trim()}`;
-
-      case "wifi":
-        return `WIFI:T:${formData.wifiSecurity};S:${formData.wifiName};P:${formData.wifiPassword};;`;
-
-      default:
-        return "";
-    }
-  };
-
-  const validateInput = () => {
-    if (qrType === "url") {
-      if (!formData.url.trim()) {
-        return "Please enter a URL.";
+    const clearCanvas = () => {
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
       }
+    };
 
-      try {
-        const url = new URL(formData.url);
+    const validateInput = () => {
+      if (qrType === "url") {
+        if (!formData.url?.trim()) return "Please enter a URL.";
 
-        if (!["http:", "https:"].includes(url.protocol)) {
-          return "Please enter a valid HTTP or HTTPS URL.";
+        try {
+          const url = new URL(formData.url.trim());
+          if (!["http:", "https:"].includes(url.protocol)) {
+            return "Please enter a valid HTTP or HTTPS URL.";
+          }
+        } catch {
+          return "Please enter a valid URL.";
         }
-      } catch {
-        return "Please enter a valid URL.";
       }
-    }
 
-    if (qrType === "text") {
-      if (!formData.text.trim()) {
+      if (qrType === "text" && !formData.text?.trim()) {
         return "Please enter some text.";
       }
-    }
 
-    if (qrType === "email") {
-      if (!formData.email.trim()) {
-        return "Please enter an email address.";
+      if (qrType === "email") {
+        if (!formData.email?.trim()) {
+          return "Please enter an email address.";
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData.email.trim())) {
+          return "Please enter a valid email address.";
+        }
       }
 
-      const emailRegex =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!emailRegex.test(formData.email)) {
-        return "Please enter a valid email address.";
-      }
-    }
-
-    if (qrType === "phone") {
-      if (!formData.phone.trim()) {
+      if (qrType === "phone" && !formData.phone?.trim()) {
         return "Please enter a phone number.";
       }
-    }
 
-    if (qrType === "wifi") {
-      if (!formData.wifiName.trim()) {
-        return "Please enter the Wi-Fi network name.";
+      if (qrType === "wifi") {
+        if (!formData.wifiName?.trim()) {
+          return "Please enter the Wi-Fi network name.";
+        }
+
+        if (
+          formData.wifiSecurity !== "nopass" &&
+          !formData.wifiPassword?.trim()
+        ) {
+          return "Please enter the Wi-Fi password.";
+        }
       }
 
-      if (
-        formData.wifiSecurity !== "nopass" &&
-        !formData.wifiPassword.trim()
-      ) {
-        return "Please enter the Wi-Fi password.";
+      return "";
+    };
+
+    const getQRData = () => {
+      switch (qrType) {
+        case "url":
+          return formData.url.trim();
+
+        case "text":
+          return formData.text.trim();
+
+        case "email":
+          return `mailto:${formData.email.trim()}?subject=${encodeURIComponent(
+            formData.subject || ""
+          )}&body=${encodeURIComponent(formData.message || "")}`;
+
+        case "phone":
+          return `tel:${formData.phone.trim()}`;
+
+        case "wifi":
+          return `WIFI:T:${formData.wifiSecurity};S:${formData.wifiName};P:${formData.wifiSecurity === "nopass" ? "" : formData.wifiPassword};;`;
+
+        default:
+          return "";
       }
-    }
+    };
 
-    return "";
-  };
-
-  const calculateContrastWarning = () => {
-    const foreground = settings.foreground;
-    const background = settings.background;
-
-    if (foreground.toLowerCase() === background.toLowerCase()) {
-      return "Very low contrast. The QR code may not scan correctly.";
-    }
-
-    return "";
-  };
-
-  useEffect(() => {
     const inputError = validateInput();
-
     setError(inputError);
 
-    const contrastWarning =
-      calculateContrastWarning();
+    const foreground = settings.foreground || "#000000";
+    const background = settings.background || "#FFFFFF";
 
-    setWarning(contrastWarning);
+    setWarning(
+      foreground.toLowerCase() === background.toLowerCase()
+        ? "Very low contrast. The QR code may not scan correctly."
+        : ""
+    );
 
     if (inputError) {
-      const canvas = canvasRef.current;
-
-      if (canvas) {
-        const context = canvas.getContext("2d");
-
-        context.clearRect(
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-      }
-
-      return;
-    }
-
-    const qrData = getQRData();
-
-    if (!qrData) {
-      return;
+      clearCanvas();
+      return () => {
+        cancelled = true;
+      };
     }
 
     QRCode.toCanvas(
-      canvasRef.current,
-      qrData,
+      canvas,
+      getQRData(),
       {
-        width: settings.size,
-        margin: settings.margin,
-        errorCorrectionLevel:
-          settings.errorCorrection,
-
+        width: Number(settings.size) || 250,
+        margin: Number(settings.margin) || 0,
+        errorCorrectionLevel: settings.errorCorrection || "M",
         color: {
-          dark: settings.foreground,
-          light: settings.background,
+          dark: foreground,
+          light: background,
         },
       },
       (generationError) => {
+        if (cancelled) return;
+
         if (generationError) {
-          setError(
-            "Unable to generate the QR code."
-          );
+          clearCanvas();
+          setError("Unable to generate the QR code. Please check your settings.");
         }
       }
     );
-  }, [
-    qrType,
-    formData,
-    settings,
-  ]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qrType, formData, settings]);
 
   const downloadQR = () => {
-    if (error) {
-      return;
-    }
-
-    const canvas = canvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
+    if (error || !canvasRef.current) return;
 
     const link = document.createElement("a");
-
     link.download = "qr-code.png";
-
-    link.href = canvas.toDataURL("image/png");
-
+    link.href = canvasRef.current.toDataURL("image/png");
     link.click();
   };
 
   return (
     <div className="qr-preview-card">
-
       <div className="preview-header">
         <h2>Live Preview</h2>
-
-        <span className="live-badge">
-          LIVE
-        </span>
+        <span className="live-badge">LIVE</span>
       </div>
 
       <div className="qr-container">
+        {/* Keep the canvas mounted so it is ready whenever the input becomes valid. */}
+        <canvas
+          ref={canvasRef}
+          style={{ display: error ? "none" : "block" }}
+        />
 
-        {error ? (
+        {error && (
           <div className="empty-state">
             <p>QR Preview</p>
-            <span>
-              Enter valid information to generate
-              your QR code.
-            </span>
+            <span>Enter valid information to generate your QR code.</span>
           </div>
-        ) : (
-          <canvas ref={canvasRef}></canvas>
         )}
-
       </div>
 
-      {error && (
-        <div className="error-message">
-          ❌ {error}
-        </div>
-      )}
+      {error && <div className="error-message">❌ {error}</div>}
 
       {warning && !error && (
-        <div className="warning-message">
-          ⚠️ {warning}
-        </div>
+        <div className="warning-message">⚠️ {warning}</div>
       )}
 
       {!error && !warning && (
@@ -232,7 +183,6 @@ function QRPreview({
       )}
 
       <div className="preview-actions">
-
         <button
           className="primary-button"
           onClick={downloadQR}
@@ -248,9 +198,7 @@ function QRPreview({
         >
           Save to Recent
         </button>
-
       </div>
-
     </div>
   );
 }
